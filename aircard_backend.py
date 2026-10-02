@@ -652,6 +652,20 @@ def main():
         cmd_save_cards(sys.argv[2])
     elif norm_cmd == "prepare-image" and len(sys.argv) > 3:
         cmd_prepare_image(sys.argv[2], sys.argv[3])
+    elif norm_cmd == "prepare-database-number-colour" and len(sys.argv) == 6:
+        from wallet_database_colour import prepare_number_colour
+        try:
+            print(json.dumps(prepare_number_colour(*sys.argv[2:6])))
+        except Exception as exc:
+            print(json.dumps({"ok": False, "message": str(exc)}))
+            sys.exit(1)
+    elif norm_cmd == "text-colour" and len(sys.argv) == 5:
+        from card_text_colour import apply_colour
+        try:
+            print(json.dumps(apply_colour(sys.argv[2], sys.argv[3], sys.argv[4])))
+        except Exception as exc:
+            print(json.dumps({"ok": False, "message": str(exc)}))
+            sys.exit(1)
     elif norm_cmd == "flash" and len(sys.argv) > 4:
         if not cmd_flash(sys.argv[2], sys.argv[3], sys.argv[4]):
             sys.exit(1)

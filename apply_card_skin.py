@@ -177,7 +177,7 @@ def operation_ok(result: dict) -> bool:
     )
 
 
-def read_file(udid: str, target: str, leaf: str, retries: int = 1) -> "bytes | None":
+def read_file(udid: str, target: str, leaf: str, retries: int = 1, backup_path: "Path | None" = None) -> "bytes | None":
     """Exports a file outside Media into Media, reads it via AFC, restores it.
 
     Move semantics: the AirTraffic sync MOVES target/leaf to Media/recovered.
@@ -262,7 +262,24 @@ def read_file(udid: str, target: str, leaf: str, retries: int = 1) -> "bytes | N
                     return None
                 data = local_out.read_bytes()
 
+                try:
+                    if backup_path is not None:
+                        backup_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                        with backup_path.open("xb") as backup:
+                            os.chmod(backup_path, 0o600)
+                            backup.write(data)
+                            backup.flush()
+                            os.fsync(backup.fileno())
+                except Exception:
+                    write_file(udid, target, leaf, data, retries=3)
+                    # Keep recovered bytes on device if durable backup failed.
+                    raise
                 restored = write_file(udid, target, leaf, data, retries=3)
+                if not restored:
+                    # Never delete the only device-side original after a failed restore.
+                    if backup_path is not None:
+                        raise RuntimeError("Original restoration failed; backup saved. Stop and recover before retrying.")
+                    return None
 
                 finish = native(
                     "finish-write",
@@ -280,7 +297,8 @@ def read_file(udid: str, target: str, leaf: str, retries: int = 1) -> "bytes | N
                     return data
                 return None
         except Exception:
-            pass
+            if backup_path is not None:
+                raise
         if attempt < retries:
             time.sleep(0.3 * attempt)
     return None

@@ -1529,6 +1529,61 @@ class AppViewModel: ObservableObject {
         }
     }
     
+    func prepareDatabaseNumberColour(cardID: String, colour: String) {
+        guard !isFlashing, !isScanningCards, !isCheckingDevice,
+              currentVerifiedCardIDs.contains(cardID),
+              let dev = device, dev.connected, dev.udid != nil else {
+            errorMessage = "Stop scanning and connect the verified iPhone first."
+            return
+        }
+        let openPanel = NSOpenPanel()
+        openPanel.title = "Select a local Wallet database snapshot"
+        openPanel.message = "This prepares a separate database copy. It does not read or replace the iPhone's live database."
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = false
+        guard openPanel.runModal() == .OK, let source = openPanel.url else { return }
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save prepared number-colour database"
+        savePanel.nameFieldStringValue = "passes23-number-\(colour).sqlite"
+        guard savePanel.runModal() == .OK, let output = savePanel.url else { return }
+        isFlashing = true
+        showLogs = true
+        statusText = "Preparing local number-colour database..."
+        let directory = scriptDir
+        Task.detached {
+            let process = Process()
+            process.executableURL = AppViewModel.pythonExecutableURL
+            process.environment = AppViewModel.processEnvironment
+            process.currentDirectoryURL = URL(fileURLWithPath: directory)
+            process.arguments = ["aircard_backend.py", "--prepare-database-number-colour", source.path, output.path, cardID, colour]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            var success = false
+            var message = "Could not run the colour tool."
+            do {
+                try process.run()
+                let output = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                if let result = try? JSONSerialization.jsonObject(with: output) as? [String: Any] {
+                    success = process.terminationStatus == 0 && (result["ok"] as? Bool == true)
+                    message = result["message"] as? String ?? message
+                    if result["cache_ok"] as? Bool == false {
+                        message += " Cache refresh was incomplete; restart the iPhone."
+                    }
+                }
+            } catch { message = error.localizedDescription }
+            let finalSuccess = success
+            let finalMessage = message
+            await MainActor.run {
+                self.isFlashing = false
+                self.statusText = finalMessage
+                self.log(finalMessage)
+                if !finalSuccess { self.errorMessage = finalMessage }
+            }
+        }
+    }
+
     // MARK: - Passcode Theme (.passthm) Handlers
     
     func inspectPasscodeTheme(url: URL) {
@@ -1855,6 +1910,8 @@ struct WalletCardView: View {
     let onPickImage: () -> Void
     let onClearImage: () -> Void
     let onDelete: () -> Void
+    let onTextColour: (String) -> Void
+    var colourDisabled: Bool = false
     let onDropImage: (URL) -> Void
     
     @State private var isHovered = false
@@ -2031,6 +2088,13 @@ struct WalletCardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu("Number Colour (Database)") {
+                Button("Prepare Black Update…") { onTextColour("black") }
+                Button("Prepare White Update…") { onTextColour("white") }
+            }
+            .disabled(colourDisabled)
+            .help("Prepares a local database copy changing only this card foreground colour. Requires a database snapshot; does not apply changes to the iPhone.")
 
             // Bottom Info & Controls
             HStack(spacing: 8) {
@@ -2229,6 +2293,11 @@ struct ContentView: View {
                                     onPickImage: { openCardImagePicker(for: cardID) },
                                     onClearImage: { vm.clearCardImage(for: cardID) },
                                     onDelete: { vm.deleteCard(id: cardID) },
+                                    onTextColour: { colour in
+                                        guard vm.device?.udid == deviceID else { return }
+                                        vm.prepareDatabaseNumberColour(cardID: cardID, colour: colour)
+                                    },
+                                    colourDisabled: vm.isScanningCards || vm.isFlashing || vm.isCheckingDevice,
                                     onDropImage: { url in
                                         guard vm.device?.udid == deviceID else { return }
                                         vm.setCardImage(for: cardID, url: url)
