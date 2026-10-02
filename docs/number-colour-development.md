@@ -1,19 +1,26 @@
-# Card number colour development fork
+# Card number colour — rendered cache implementation
 
-This build prepares a local Wallet database copy. It does **not** change the number colour on a stock iPhone through AirCard's current AirTraffic transport.
+This fork changes the existing white card-number glyphs in the selected card's FrontFace render cache to black. It leaves the number value, artwork pixels, Wallet database, and other cache metadata unchanged. The earlier local database preparation code remains a development utility; it is no longer the Number Colour UI.
 
-Choose **Number Colour (Database) → Prepare Black Update…** below a verified card. Select a consistent local database snapshot and a new output file. The original is unchanged. The updater changes only the selected PASS row's FOREGROUND_COLOR; it preserves PRIMARY_ACCOUNT_SUFFIX, LABEL_COLOR, all other columns, all other cards, and all other tables. Unknown schemas/encodings, duplicate matches, and triggers which change unrelated data are rejected. SQLite integrity is checked before and after preparation.
+## Use
 
-Command:
+1. Connect and unlock the iPhone; detect the card in a current scan.
+2. Stop scanning and force-close Wallet on the iPhone.
+3. Under the card, choose **Number Colour → Black**. No file selection or upload is required.
+4. Reopen Wallet and check the result.
 
-```sh
-python3 aircard_backend.py --prepare-database-number-colour SOURCE.sqlite OUTPUT.sqlite CARD_ID black
-```
+The app saves a device/card-specific original cache and operation snapshots in `~/Library/Application Support/AirCard/NumberRenderBackups/`. **Restore Number** restores the preimage only while the current cache still matches this patch, so it will not overwrite newer artwork.
 
-## Device application remains unimplemented
+## Limits
 
-A safe live implementation needs an on-device SQLite connection and transaction, with a consistent backup, exact card matching, and readback before claiming success. AirTraffic moves/replaces files; it cannot acquire SQLite locks or coordinate with passd. Closing Wallet does not stop its database service. Replacing the main database while that service or its WAL remains active is not a transaction and can lose unrelated changes. This fork therefore does not upload the prepared file to the phone.
+This is a render-cache customization. iOS can restore its original text colour when it regenerates the cache, after an issuer update, artwork flashing, or system changes. Reapply Black after opening and closing the card to generate a new cache.
 
-The former pass.json-only experimental controls did not change the payment-card overlay on the tested phone. Their backend is retained for restoring prior experiments, but is no longer exposed as a working number-colour control.
+Only the supported checksummed PKPassFrontFaceImageSet cache, with a lower-left white four-dot/four-digit number layout, is changed. The native helper checks the component layout and recognizes the suffix with Vision against the backed-up pass metadata. Unknown formats, checksum failures, unexpected layouts, and suffix mismatches stop before a cache write. The artwork and the original card number are not rewritten.
 
-Tests use synthetic databases, never customer Wallet data. Runtime fixtures, backups, device identifiers, logs, and screenshots must not be committed or published.
+## Validation
+
+The captured cache was patched locally and compared pixel by pixel: only the glyph pixels changed; no pixels outside the number zone changed. The modified cache was written and read back exactly, and the user confirmed that the displayed number was black. That validates this tested cache and phone, not every Wallet card layout or persistence after cache regeneration.
+
+Automated tests cover the checksum envelope, archive metadata preservation, invalid output/format rejection, failed-write rollback, readback failure rollback, suffix mismatch, and refusal to restore over newer artwork. Other artwork and database preparation checks remain in the test suite.
+
+Customer cache files, metadata backups, device identifiers, logs, and screenshots are never included in this repository or release.

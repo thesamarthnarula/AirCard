@@ -1529,33 +1529,23 @@ class AppViewModel: ObservableObject {
         }
     }
     
-    func prepareDatabaseNumberColour(cardID: String, colour: String) {
+    func applyRenderedNumberColour(cardID: String, colour: String) {
         guard !isFlashing, !isScanningCards, !isCheckingDevice,
               currentVerifiedCardIDs.contains(cardID),
-              let dev = device, dev.connected, dev.udid != nil else {
+              let dev = device, dev.connected, let udid = dev.udid else {
             errorMessage = "Stop scanning and connect the verified iPhone first."
             return
         }
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Select a local Wallet database snapshot"
-        openPanel.message = "This prepares a separate database copy. It does not read or replace the iPhone's live database."
-        openPanel.canChooseDirectories = false
-        openPanel.allowsMultipleSelection = false
-        guard openPanel.runModal() == .OK, let source = openPanel.url else { return }
-        let savePanel = NSSavePanel()
-        savePanel.title = "Save prepared number-colour database"
-        savePanel.nameFieldStringValue = "passes23-number-\(colour).sqlite"
-        guard savePanel.runModal() == .OK, let output = savePanel.url else { return }
         isFlashing = true
         showLogs = true
-        statusText = "Preparing local number-colour database..."
+        statusText = "Updating cached card number..."
         let directory = scriptDir
         Task.detached {
             let process = Process()
             process.executableURL = AppViewModel.pythonExecutableURL
             process.environment = AppViewModel.processEnvironment
             process.currentDirectoryURL = URL(fileURLWithPath: directory)
-            process.arguments = ["aircard_backend.py", "--prepare-database-number-colour", source.path, output.path, cardID, colour]
+            process.arguments = ["aircard_backend.py", "--rendered-number-colour", udid, cardID, colour]
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = FileHandle.nullDevice
@@ -2089,12 +2079,12 @@ struct WalletCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Menu("Number Colour (Database)") {
-                Button("Prepare Black Update…") { onTextColour("black") }
-                Button("Prepare White Update…") { onTextColour("white") }
+            Menu("Number Colour") {
+                Button("Black") { onTextColour("black") }
+                Button("Restore Number") { onTextColour("restore") }
             }
             .disabled(colourDisabled)
-            .help("Prepares a local database copy changing only this card foreground colour. Requires a database snapshot; does not apply changes to the iPhone.")
+            .help("Close Wallet first. Changes only the cached number glyphs after checking the suffix. Saves a backup and verifies readback. iOS may regenerate the cache.")
 
             // Bottom Info & Controls
             HStack(spacing: 8) {
@@ -2295,7 +2285,7 @@ struct ContentView: View {
                                     onDelete: { vm.deleteCard(id: cardID) },
                                     onTextColour: { colour in
                                         guard vm.device?.udid == deviceID else { return }
-                                        vm.prepareDatabaseNumberColour(cardID: cardID, colour: colour)
+                                        vm.applyRenderedNumberColour(cardID: cardID, colour: colour)
                                     },
                                     colourDisabled: vm.isScanningCards || vm.isFlashing || vm.isCheckingDevice,
                                     onDropImage: { url in
@@ -2387,7 +2377,7 @@ struct ContentView: View {
                     Text("AirCard")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("v1.2.5")
+                    Text("v1.2.5 · Number Colour")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)

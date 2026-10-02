@@ -7,6 +7,11 @@ cd "$SCRIPT_DIR"
 echo "==> [1/6] Building universal helper binaries (device_helper & airtraffic_host)..."
 make clean
 make all
+NUMBER_SDK="$(xcrun --sdk macosx --show-sdk-path)"
+swiftc -sdk "$NUMBER_SDK" -O -target arm64-apple-macosx14.0 Sources/render_number_colour.swift -o build/number_render_arm64
+swiftc -sdk "$NUMBER_SDK" -O -target x86_64-apple-macosx14.0 Sources/render_number_colour.swift -o build/number_render_x86_64
+lipo -create -output build/render_number_colour build/number_render_arm64 build/number_render_x86_64
+codesign --force --sign - build/render_number_colour
 
 APP_NAME="AirCard"
 APP_DIR="build/${APP_NAME}.app"
@@ -43,7 +48,7 @@ cat << 'EOF' > "${CONTENTS_DIR}/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.5-number-colour-dev</string>
+    <string>1.2.5-number-render-dev</string>
     <key>CFBundleVersion</key>
     <string>10</string>
     <key>LSMinimumSystemVersion</key>
@@ -67,6 +72,7 @@ fi
 # directly, so the bundle needs no libimobiledevice tooling.
 cp build/device_helper "$BIN_DIR/"
 cp build/airtraffic_host "$BIN_DIR/"
+cp build/render_number_colour "$BIN_DIR/"
 
 # Copy python backend scripts
 cp apply_card_skin.py "$RESOURCES_DIR/"
@@ -75,6 +81,7 @@ cp aircard_backend.py "$RESOURCES_DIR/"
 cp card_assets.py "$RESOURCES_DIR/"
 cp card_text_colour.py "$RESOURCES_DIR/"
 cp wallet_database_colour.py "$RESOURCES_DIR/"
+cp rendered_number_colour.py "$RESOURCES_DIR/"
 cp wallet_catalog.py "$RESOURCES_DIR/"
 
 # A bundle without these cannot talk to a device at all, so fail here instead
